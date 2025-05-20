@@ -15,6 +15,9 @@
 
 #include <vcpkg/base/messages.h>
 
+#include <sstream>
+#include <string>
+
 #if defined(_WIN32)
 
 namespace vcpkg::VisualStudio
@@ -89,7 +92,32 @@ namespace vcpkg::VisualStudio
         const auto& program_files_32_bit = get_program_files_32_bit().value_or_exit(VCPKG_LINE_INFO);
 
         // Instances from vswhere
-        const Path vswhere_exe = program_files_32_bit / "Microsoft Visual Studio" / "Installer" / "vswhere.exe";
+        //const Path vswhere_exe = program_files_32_bit / "Microsoft Visual Studio" / "Installer" / "vswhere.exe";
+        auto vswhere_exe = [&]() {
+            auto p1 = fs.current_path(IgnoreErrors{})/"vswhere.exe";
+            if (fs.exists(p1, IgnoreErrors{}))
+            {
+                return p1;
+            }
+
+            auto pp = get_environment_variable("PATH");
+            if (!pp) return Path("");
+
+            std::stringstream ss( *pp.get() );
+            std::string path_dir;
+
+            while (std::getline(ss, path_dir, ';'))
+            {
+                Path p = path_dir;
+                p /= "vswhere.exe";
+                if (fs.exists(p, IgnoreErrors{}))
+                {
+                    return p;
+                }
+            }
+            return Path("");
+        }();
+
         if (fs.exists(vswhere_exe, IgnoreErrors{}))
         {
             auto output = flatten_out(cmd_execute_and_capture_output(Command(vswhere_exe)
@@ -207,7 +235,7 @@ namespace vcpkg::VisualStudio
                 const auto vc_dir = vs_instance.root_path / "VC";
 
                 // Skip any instances that do not have vcvarsall.
-                const auto vcvarsall_dir = vc_dir / "Auxiliary/Build";
+                const auto vcvarsall_dir = vc_dir / "Auxiliary"/"Build";
                 const auto vcvarsall_bat = vcvarsall_dir / "vcvarsall.bat";
                 paths_examined.push_back(vcvarsall_bat);
                 if (!fs.exists(vcvarsall_bat, IgnoreErrors{})) continue;
@@ -243,7 +271,7 @@ namespace vcpkg::VisualStudio
                     supported_architectures.push_back({"arm64_amd64", CPU::ARM64, CPU::X64});
 
                 // Locate the "best" MSVC toolchain version
-                const auto msvc_path = vc_dir / "Tools/MSVC";
+                const auto msvc_path = vc_dir / "Tools"/"MSVC";
                 std::vector<Path> msvc_subdirectories = fs.get_directories_non_recursive(msvc_path, IgnoreErrors{});
 
                 // Sort them so that latest comes first
